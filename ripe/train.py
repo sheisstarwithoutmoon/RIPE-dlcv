@@ -7,13 +7,17 @@ root = pyrootutils.setup_root(
     dotenv=True,
 )
 
-SEED = 32000
+# seed can be overridden per run (e.g. RIPE_SEED=1 python ripe/train.py ...) for repeated runs
+SEED = int(__import__("os").environ.get("RIPE_SEED", 32000))
 
 import collections
+import csv
 import os
+import time
 
 import hydra
 from hydra.utils import instantiate
+from omegaconf import OmegaConf
 from lightning.fabric import Fabric
 
 print(SEED)
@@ -39,6 +43,38 @@ from pathlib import Path
 torch.manual_seed(SEED)
 np.random.seed(SEED)
 random.seed(SEED)
+
+
+class CSVLogger:
+    """Appends dict rows to a CSV file (resume-safe). Used next to wandb so plots can be made offline."""
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self.fields = None
+        if self.path.exists():
+            with open(self.path) as f:
+                header = f.readline().strip()
+            self.fields = header.split(",") if header else None
+
+    def log(self, row):
+        row = {k: (v.item() if torch.is_tensor(v) else v) for k, v in row.items()}
+        new = self.fields is None
+        if new:
+            self.fields = list(row.keys())
+        with open(self.path, "a", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=self.fields, extrasaction="ignore")
+            if new:
+                w.writeheader()
+            w.writerow(row)
+
+
+def val_row(summary, step):
+    # IMW_2020_Benchmark keys look like "rel_pose_error@5°__original"
+    row = {"step": step}
+    for k, v in summary.items():
+        th = k.split("@")[1].split("°")[0]
+        row[f"auc@{th}"] = v
+    return row
 
 
 def unpack_batch(batch):
@@ -134,6 +170,15 @@ def train(cfg):
     num_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
     log.info(f"Number of parameters: {num_params}")
 
+    # sidecar with the backbone config, so evaluation can rebuild the right architecture
+    # (ripe/model_zoo/checkpoint.py reads it)
+    OmegaConf.save(cfg.backbones, output_dir / "backbone.yaml")
+    OmegaConf.save(cfg, output_dir / "train_config.yaml")
+    train_csv = CSVLogger(output_dir / "train_metrics.csv")
+    val_csv = CSVLogger(output_dir / "val_metrics.csv")
+    ckpt_path = output_dir / "checkpoints" / "last.pth"
+    ckpt_path.parent.mkdir(parents=True, exist_ok=True)
+
     fp_penalty = cfg.fp_penalty  # small penalty for not finding a match
     kp_penalty = cfg.kp_penalty  # small penalty for low logprob keypoints
 
@@ -158,6 +203,42 @@ def train(cfg):
 
     opt_pi.zero_grad()
 
+    # ====== resume (Colab sessions are time-limited) ======
+    start_step = 0
+    if cfg.resume and ckpt_path.exists():
+        ckpt = torch.load(ckpt_path, map_location=fabric.device, weights_only=False)
+        net.load_state_dict(ckpt["net"])
+        opt_pi.load_state_dict(ckpt["optimizer"])
+        start_step = ckpt["step"] + 1
+        if scheduler:
+            scheduler.i_step = ckpt["lr_scheduler_step"]
+        random.setstate(ckpt["py_rng"])
+        np.random.set_state(ckpt["np_rng"])
+        torch.set_rng_state(ckpt["torch_rng"].cpu())
+        torch.cuda.set_rng_state(ckpt["cuda_rng"].cpu())
+        log.info(f"Resumed from {ckpt_path} at step {start_step}")
+        del ckpt
+
+    def save_checkpoint(step):
+        tmp = ckpt_path.with_suffix(".tmp")
+        torch.save(
+            {
+                "net": net.state_dict(),
+                "optimizer": opt_pi.state_dict(),
+                "step": step,
+                "lr_scheduler_step": scheduler.i_step if scheduler else None,
+                "py_rng": random.getstate(),
+                "np_rng": np.random.get_state(),
+                "torch_rng": torch.get_rng_state(),
+                "cuda_rng": torch.cuda.get_rng_state(),
+            },
+            tmp,
+        )
+        os.replace(tmp, ckpt_path)  # atomic, so a disconnect never leaves a broken checkpoint
+
+    ckpt_interval = cfg.ckpt_interval
+    t_last, step_last = time.perf_counter(), start_step - 1
+
     # initialize scheduler
     alpha_scheduler = instantiate(cfg.alpha_scheduler)
     beta_scheduler = instantiate(cfg.beta_scheduler)
@@ -167,8 +248,8 @@ def train(cfg):
     # check if the model is in training mode
     net.train()
 
-    with tqdm.tqdm(total=steps) as pbar:
-        for i_step in range(steps):
+    with tqdm.tqdm(total=steps, initial=start_step) as pbar:
+        for i_step in range(start_step, steps):
             alpha = alpha_scheduler(i_step)
             beta = beta_scheduler(i_step)
             inl_th = inl_th_scheduler(i_step)
@@ -391,18 +472,48 @@ def train(cfg):
                     },
                     step=i_step,
                 )
+                now = time.perf_counter()
+                train_csv.log(
+                    {
+                        "step": i_step,
+                        "loss": loss.item() * num_grad_accs,
+                        "loss_policy": -loss_policy_stack.mean().item(),
+                        "loss_kp": loss_kp_stack.mean().item() if loss_kp_stack is not None else 0.0,
+                        "loss_desc": loss_desc_stack.mean().item() if loss_desc_stack is not None else 0.0,
+                        "num_kpts1": sum_num_keypoints_1 / batch_size,
+                        "num_kpts2": sum_num_keypoints_2 / batch_size,
+                        "mean_reward": sum_reward_batch / batch_size,
+                        "lr": opt_pi.param_groups[0]["lr"],
+                        "skipped": sum(ma_skipped_batches) / len(ma_skipped_batches),
+                        "alpha": alpha,
+                        # wall-clock seconds per step since the previous log row (includes validation)
+                        "sec_per_step": (now - t_last) / max(i_step - step_last, 1),
+                        "gpu_mem_gb": torch.cuda.max_memory_allocated() / 1024**3,
+                    }
+                )
+                t_last, step_last = now, i_step
 
-            if i_step % cfg.val_interval == 0:
+            if cfg.val_interval and i_step % cfg.val_interval == 0:  # 0 disables validation
                 val_benchmark.evaluate(net, fabric.device, progress_bar=False)
                 val_benchmark.log_results(logger=wandb_logger, step=i_step)
+                val_csv.log(val_row(val_benchmark.calc_auc(), i_step))
 
                 # ensure that the model is in training mode again
                 net.train()
 
-    # save the model
+            if ckpt_interval and (i_step + 1) % ckpt_interval == 0:
+                save_checkpoint(i_step)
+
+    # final validation, so every learning curve ends at the trained model
+    if cfg.val_interval:
+        val_benchmark.evaluate(net, fabric.device, progress_bar=False)
+        val_csv.log(val_row(val_benchmark.calc_auc(), steps))
+        print("final IMW val:", val_benchmark.calc_auc())
+
+    # save the model (plain state_dict, same format as the official ripe_weights.pth)
     torch.save(
         net.state_dict(),
-        output_dir / ("model" + "_" + str(i_step + 1) + "_final" + ".pth"),
+        output_dir / ("model" + "_" + str(steps) + "_final" + ".pth"),
     )
 
 

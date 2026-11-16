@@ -118,8 +118,8 @@ class IMW_2020_Benchmark:
             camera_2 = sample["trg_camera"]
 
             M, info = poselib.estimate_relative_pose(
-                matched_pts_1.cpu().numpy(),
-                matched_pts_2.cpu().numpy(),
+                matched_pts_1.float().cpu().numpy().astype("float64"),
+                matched_pts_2.float().cpu().numpy().astype("float64"),
                 camera_1.to_cameradict(),
                 camera_2.to_cameradict(),
                 {

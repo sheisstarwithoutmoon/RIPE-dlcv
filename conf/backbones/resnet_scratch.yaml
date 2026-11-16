@@ -1,0 +1,8 @@
+# Ablation: ResNet-18 randomly initialised (no ImageNet weights)
+_target_: ripe.models.backbones.resnet.ResNet
+nchannels: 3
+pretrained: False
+use_instance_norm: False
+mode: dect
+num_layers: 4
+stem_channels: [32, 64]

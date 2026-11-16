@@ -1,0 +1,8 @@
+# Ablation: ResNet-18 incl. layer4 (stride 32, 512 ch) -> 1024-d hypercolumn
+_target_: ripe.models.backbones.resnet.ResNet
+nchannels: 3
+pretrained: True
+use_instance_norm: False
+mode: dect
+num_layers: 5
+stem_channels: [32, 64]

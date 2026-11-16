@@ -14,8 +14,9 @@ class PoseLibRelativePoseEstimator:
 
     def __call__(self, pts0, pts1, inl_th):
         F, info = poselib.estimate_fundamental(
-            pts0.cpu().numpy(),
-            pts1.cpu().numpy(),
+            # float64: recent PoseLib builds reject float32 arrays (same fix as for Glue Factory)
+            pts0.detach().float().cpu().numpy().astype("float64"),
+            pts1.detach().float().cpu().numpy().astype("float64"),
             {
                 "max_epipolar_error": inl_th,
             },

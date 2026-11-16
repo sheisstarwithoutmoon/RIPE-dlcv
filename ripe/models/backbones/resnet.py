@@ -17,7 +17,8 @@
 #     level 4: ResNet layer3       stride 16  256 ch   ImageNet-pretrained
 #
 #   layer4 (512 ch, stride 32) is dropped by default, analogous to RIPE cutting VGG-19 before
-#   its conv5 block. num_layers=5 keeps it (ablation).
+#   its conv5 block. num_layers=5 keeps it (ablation). stem_channels=(16, 32) gives the
+#   narrow-stem ablation (level 1 then has 32 ch, hypercolumn 480-d).
 #   Hypercolumn: 64+64+128+256 = 512-d (VGG: 960-d), projected to 256-d by RIPE's 1x1 conv.
 #
 #   The VGG decoder has its channel widths hard-coded (512/256/128/64). Here the refiners are
@@ -32,19 +33,21 @@ from .vgg_utils import ConvRefiner, Decoder
 
 
 class ResNet18Encoder(nn.Module):
-    def __init__(self, pretrained=True, num_input_channels=3, num_layers=4):
+    def __init__(self, pretrained=True, num_input_channels=3, num_layers=4, stem_channels=(32, 64)):
         super().__init__()
         assert num_layers in (4, 5), "num_layers must be 4 (stem+layer1-3) or 5 (stem+layer1-4)"
         weights = tvm.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None
         resnet = tvm.resnet18(weights=weights)
 
         # full-resolution stem: supplies the stride-1 features the heatmap needs
+        # (default 32 -> 64 channels; the narrow-stem ablation uses 16 -> 32)
+        c1, c2 = stem_channels
         self.stem = nn.Sequential(
-            nn.Conv2d(num_input_channels, 32, 3, 1, 1, bias=False),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(num_input_channels, c1, 3, 1, 1, bias=False),
+            nn.BatchNorm2d(c1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(32, 64, 3, 1, 1, bias=False),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(c1, c2, 3, 1, 1, bias=False),
+            nn.BatchNorm2d(c2),
             nn.ReLU(inplace=True),
         )
 
@@ -58,7 +61,7 @@ class ResNet18Encoder(nn.Module):
         stages = [resnet.layer1, resnet.layer2, resnet.layer3, resnet.layer4]
         self.stages = nn.ModuleList(stages[: num_layers - 1])
 
-        self.dims = [64, 64, 128, 256, 512][:num_layers]
+        self.dims = [c2, 64, 128, 256, 512][:num_layers]
 
     def get_dim_layers(self):
         return self.dims
@@ -113,6 +116,7 @@ class ResNet(BackboneBase):
         use_instance_norm=True,
         mode="dect",
         num_layers=4,
+        stem_channels=(32, 64),
     ):
         super().__init__(nchannels=nchannels, use_instance_norm=use_instance_norm)
 
@@ -127,6 +131,7 @@ class ResNet(BackboneBase):
             pretrained=pretrained,
             num_input_channels=nchannels,
             num_layers=num_layers,
+            stem_channels=tuple(stem_channels),
         )
 
         NUM_OUTPUT_CHANNELS, hidden_blocks = self._get_mode_params(mode)

@@ -8,10 +8,12 @@
 # feature maps. Keypoint sampling and matching come afterwards and are identical for all
 # backbones, so they are excluded.
 #
-# Usage:  python compare_backbones.py  [--size H W] [--runs N] [--cpu]
+# Usage:  python compare_backbones.py  [--size H W] [--runs N] [--cpu] [--all] [--json out.json]
+#   --all also measures the ablation variants trained in the final phase.
 
 import argparse
 import gc
+import json
 import time
 
 import torch
@@ -26,6 +28,11 @@ torch.set_grad_enabled(False)
 VARIANTS = {
     "VGG-19 (original)": lambda: VGG(pretrained=False),
     "ResNet-18 (ours)": lambda: ResNet(pretrained=False),
+}
+# ablations (same keys as the run names in RIPE_final.ipynb); scratch has the same cost as ResNet-18
+ABLATIONS = {
+    "ResNet-18 + layer4": lambda: ResNet(pretrained=False, num_layers=5),
+    "ResNet-18 narrow stem": lambda: ResNet(pretrained=False, stem_channels=(16, 32)),
 }
 
 
@@ -73,7 +80,11 @@ def main():
     ap.add_argument("--warmup", type=int, default=5)
     ap.add_argument("--runs", type=int, default=30)
     ap.add_argument("--cpu", action="store_true")
+    ap.add_argument("--all", action="store_true", help="include ablation variants")
+    ap.add_argument("--json", default=None, help="write the table to this JSON file")
     args = ap.parse_args()
+    if args.all:
+        VARIANTS.update(ABLATIONS)
 
     dev = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
     H, W = args.size
@@ -88,6 +99,11 @@ def main():
             f"{r['name']:<24}{r['hyper']:>9}{r['enc']:>11.2f}{r['bb']:>11.2f}"
             f"{r['total']:>9.2f}{r['ms']:>9.1f}{r['mem']:>9.0f}"
         )
+
+    if args.json:
+        dev_name = torch.cuda.get_device_name() if dev.type == "cuda" else "CPU"
+        with open(args.json, "w") as f:
+            json.dump({"device": dev_name, "size": [H, W], "rows": rows}, f, indent=2)
 
     v = rows[0]
     print()

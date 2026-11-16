@@ -23,6 +23,9 @@ precision: "bf16-mixed" # numerically more stable
 log_interval: 50 # log every N steps/ batches
 wandb_mode: online
 val_interval: 2000
+# --- added for Colab (DLCV project) ---
+ckpt_interval: 250 # save checkpoints/last.pth every N steps (0 = off)
+resume: true # continue from <output_dir>/checkpoints/last.pth if it exists
 conf_inference:
   threshold: 0.5
   top_k: 2048

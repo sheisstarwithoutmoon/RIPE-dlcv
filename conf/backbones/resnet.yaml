@@ -4,3 +4,5 @@ pretrained: True
 use_instance_norm: False
 mode: dect
 num_layers: 4
+
+stem_channels: [32, 64]

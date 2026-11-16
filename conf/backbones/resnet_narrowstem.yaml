@@ -1,0 +1,8 @@
+# Ablation: narrower full-resolution stem (16 -> 32 ch) -> 480-d hypercolumn
+_target_: ripe.models.backbones.resnet.ResNet
+nchannels: 3
+pretrained: True
+use_instance_norm: False
+mode: dect
+num_layers: 4
+stem_channels: [16, 32]
