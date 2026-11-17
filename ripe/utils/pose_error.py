@@ -3,6 +3,9 @@
 import numpy as np
 import torch
 
+# np.trapz was removed in NumPy 2.x (renamed np.trapezoid)
+_trapezoid = getattr(np, "trapezoid", None) or np.trapz
+
 
 def angle_error_mat(R1, R2):
     cos = (torch.trace(torch.einsum("...ij, ...jk -> ...ik", R1.T, R2)) - 1) / 2
@@ -40,7 +43,7 @@ def cal_error_auc(errors, thresholds):
         last_index = np.searchsorted(errors, t)
         r = np.r_[recall[:last_index], recall[last_index - 1]]
         e = np.r_[errors[:last_index], t]
-        aucs.append(np.round((np.trapz(r, x=e) / t), 4))
+        aucs.append(np.round((_trapezoid(r, x=e) / t), 4))
     return aucs
 
 
