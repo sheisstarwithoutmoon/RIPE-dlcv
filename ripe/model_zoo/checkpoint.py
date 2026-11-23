@@ -1,4 +1,4 @@
-# Load a RIPE model trained with ripe/train.py, for any backbone (DLCV course project).
+# Load a RIPE model trained with ripe/train.py, for any backbone.
 #
 # ripe/train.py saves a plain state_dict (model_<steps>_final.pth) and, next to it, a
 # backbone.yaml with the Hydra backbone config. This rebuilds exactly that architecture,

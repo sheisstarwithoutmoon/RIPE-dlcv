@@ -1,4 +1,4 @@
-# ResNet-18 backbone for RIPE (DLCV course project, IIIT Sri City).
+# ResNet-18 backbone for RIPE.
 #
 # Same constructor arguments and outputs as ripe/models/backbones/vgg.py, so it is selected
 # with `backbones=resnet` (conf/backbones/resnet.yaml) and the rest of RIPE (keypoint sampling,

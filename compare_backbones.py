@@ -1,13 +1,13 @@
-# Computational cost of RIPE with different backbones (DLCV course project, IIIT Sri City).
-#
+# Computational cost of RIPE with different backbones.
+
 # Measures parameter counts (encoder, encoder+decoder, full model incl. 1x1 descriptor conv),
 # forward time of the backbone network and peak GPU memory. These depend only on the
 # architecture, so all models are randomly initialised and no training is needed.
-#
+
 # Timing covers model.net(img), i.e. encoder + decoder producing the heatmap and the coarse
 # feature maps. Keypoint sampling and matching come afterwards and are identical for all
 # backbones, so they are excluded.
-#
+
 # Usage:  python compare_backbones.py  [--size H W] [--runs N] [--cpu] [--all] [--json out.json]
 #   --all also measures the ablation variants trained in the final phase.
 

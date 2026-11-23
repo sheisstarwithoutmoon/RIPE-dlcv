@@ -177,3 +177,7 @@ tmp.py
 /pretrained_weights
 /results_supple_cvpr
 /ext_files
+
+
+final-nb/inputs/
+final-nb/outputs/

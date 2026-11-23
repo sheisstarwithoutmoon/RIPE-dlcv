@@ -1,4 +1,4 @@
-# Figures and tables for the final report (DLCV course project).
+# Figures and tables for the final report.
 #
 # Inputs (all written by the RIPE_final.ipynb pipeline):
 #   --runs-dir  <dir>/<run>/train_metrics.csv, val_metrics.csv   (ripe/train.py)
