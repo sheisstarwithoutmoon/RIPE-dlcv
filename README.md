@@ -14,3 +14,7 @@ as both the folders are in gitignore cause github doesn't allow to push files ab
 RIPE_FINAL_END: https://drive.google.com/drive/folders/1uu5pCP_uP057ouDwtajbNZ4XsfXkCFHI?usp=sharing
 
 Do press add-ons and add secret GH_TOKEN 
+
+Team Contributions
+- Vanya Awasthi (S20230020251): Hybrid ResNet-18 encoder and decoder adaptation, checkpoint, data/evaluation pipelines, training/ablations, and profiling scripts.
+- V Sai Greeshma (S20230020259): VGG-19 baseline reproduction, evaluation verification, plots/tables, comparative analysis.
