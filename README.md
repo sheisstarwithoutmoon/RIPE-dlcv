@@ -1,3 +1,5 @@
+Baseline paper: https://ieeexplore.ieee.org/abstract/document/11445864
+
 To run the final notebook we have done training in batches as there was 12hrs limit per session. So we have 5 inputs that we will be added for testing.
 
 INPUT: 
